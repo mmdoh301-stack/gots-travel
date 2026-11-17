@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GOTS Travel — Admin</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f2eee6;color:#29271f;font:14px Arial}.top{background:#292820;color:white;padding:20px 5%;display:flex;justify-content:space-between;align-items:center}.top b{font:28px Georgia;color:#d4b887}.wrap{max-width:1250px;margin:35px auto;padding:0 18px}.panel,.card{background:white;padding:22px;border:1px solid #e2d9ca}.login{max-width:420px;margin:8vh auto}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.card small{color:#887858;text-transform:uppercase;letter-spacing:1px}.card strong{display:block;font:34px Georgia;margin-top:10px}input,select,button{padding:12px;border:1px solid #c8b894;background:#fff}input{width:100%;margin:8px 0 16px}button{cursor:pointer;background:#292820;color:white}a{color:inherit}.filters{display:flex;gap:8px;flex-wrap:wrap;margin:25px 0}.filters button.active{background:#b79a68;color:#201e19}.tablewrap{overflow:auto}table{width:100%;border-collapse:collapse;background:white;min-width:850px}th,td{text-align:left;padding:13px;border-bottom:1px solid #eee;vertical-align:top}th{background:#e9e1d4;font-size:11px;text-transform:uppercase;letter-spacing:1px}td small{color:#777;line-height:1.6}.error{color:#a33}.hidden{display:none!important}.right{float:right}@media(max-width:750px){.cards{grid-template-columns:repeat(2,1fr)}}
+</style></head><body>
+<div class="top"><b>GOTS TRAVEL / BOOKINGS</b><span id="user"></span></div>
+<main class="wrap">
+<section id="login" class="panel login"><h1>Administrator sign in</h1><p>Use the admin account created in Supabase.</p><form id="loginForm"><label>Email</label><input id="email" type="email" required autocomplete="username"><label>Password</label><input id="password" type="password" required autocomplete="current-password"><button>Sign in</button></form><p id="loginError" class="error"></p></section>
+<section id="dashboard" class="hidden"><button id="logout" class="right">Sign out</button><h1>Booking enquiries</h1><p>Review customer enquiries and update their status.</p>
+<div class="cards"><div class="card"><small>New</small><strong id="n-new">0</strong></div><div class="card"><small>Contacted</small><strong id="n-contacted">0</strong></div><div class="card"><small>Confirmed</small><strong id="n-confirmed">0</strong></div><div class="card"><small>Cancelled</small><strong id="n-cancelled">0</strong></div></div>
+<div class="filters"><button data-filter="all" class="active">All</button><button data-filter="new">New</button><button data-filter="contacted">Contacted</button><button data-filter="confirmed">Confirmed</button><button data-filter="cancelled">Cancelled</button><button id="refresh">Refresh</button></div>
+<div class="tablewrap"><table><thead><tr><th>Reference / Date</th><th>Customer</th><th>Journey</th><th>Travel details</th><th>Message</th><th>Status</th></tr></thead><tbody id="rows"><tr><td colspan="6">Loading…</td></tr></tbody></table></div><p id="dashError" class="error"></p></section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script>
+let sb, bookings=[], filter='all';
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function init(){
+ try{const c=await fetch('/api/public-config').then(r=>r.json());if(!c.url)throw Error(c.error||'Missing configuration');sb=window.supabase.createClient(c.url,c.anonKey);
+ const {data:{session}}=await sb.auth.getSession();if(session)showDashboard();}catch(e){$('loginError').textContent=e.message;}
+}
+function showDashboard(){ $('login').classList.add('hidden');$('dashboard').classList.remove('hidden');$('user').textContent='Signed in';load();}
+$('loginForm').onsubmit=async e=>{e.preventDefault();$('loginError').textContent='';const {error}=await sb.auth.signInWithPassword({email:$('email').value,password:$('password').value});if(error){$('loginError').textContent=error.message;return;}showDashboard();};
+$('logout').onclick=async()=>{await sb.auth.signOut();$('dashboard').classList.add('hidden');$('login').classList.remove('hidden');$('user').textContent='';};
+async function load(){ $('dashError').textContent='';const {data,error}=await sb.from('bookings').select('*').order('created_at',{ascending:false}).limit(500);if(error){$('dashError').textContent=error.message;return;}bookings=data||[];for(const s of ['new','contacted','confirmed','cancelled'])$('n-'+s).textContent=bookings.filter(b=>b.status===s).length;render();}
+function render(){const list=filter==='all'?bookings:bookings.filter(b=>b.status===filter);$('rows').innerHTML=list.length?list.map(b=>`<tr><td><b>${esc(b.reference_code)}</b><br><small>${esc(new Date(b.created_at).toLocaleString())}</small></td><td>${esc(b.name)}<br><small>${esc(b.email)}</small></td><td>${esc(b.tour)}</td><td>${esc(b.travel_date||'Flexible')} · ${esc(b.guests)} traveller(s)</td><td>${esc(b.message||'')}</td><td><select data-id="${esc(b.id)}" class="status"><option value="new" ${b.status==='new'?'selected':''}>New</option><option value="contacted" ${b.status==='contacted'?'selected':''}>Contacted</option><option value="confirmed" ${b.status==='confirmed'?'selected':''}>Confirmed</option><option value="cancelled" ${b.status==='cancelled'?'selected':''}>Cancelled</option></select></td></tr>`).join(''):'<tr><td colspan="6">No enquiries found.</td></tr>';}
+document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;document.querySelectorAll('[data-filter]').forEach(x=>x.classList.toggle('active',x===b));render();});
+$('refresh').onclick=load;
+$('rows').onchange=async e=>{if(!e.target.matches('select.status'))return;const {error}=await sb.from('bookings').update({status:e.target.value}).eq('id',e.target.dataset.id);if(error){$('dashError').textContent=error.message;return;}await load();};
+init();
+</script></body></html>
